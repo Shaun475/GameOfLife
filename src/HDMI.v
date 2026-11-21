@@ -74,131 +74,160 @@ module HDMI (
     always @(posedge pixclk)
         if (CounterX == 799 && CounterY == 524)
             frame <= frame + 8'd1;
-    
-    reg  Frame_buffer_a [0:639][0:479];
-    reg  Frame_buffer_b [0:639][0:479];
-    reg  swap_buffer;
-    initial swap_buffer = 1'b0;
 
-    // Seed Frame_buffer_a once at power-up (rest stay 0)
-integer ix, iy;
-initial begin
-    for (iy = 0; iy < 480; iy = iy + 1)
-        for (ix = 0; ix < 640; ix = ix + 1)
-            Frame_buffer_a[ix][iy] = 1'b0;
-
-    // Glider at (100,100) — moves down-right forever
-    Frame_buffer_a[101][100] = 1'b1;
-    Frame_buffer_a[102][101] = 1'b1;
-    Frame_buffer_a[100][102] = 1'b1;
-    Frame_buffer_a[101][102] = 1'b1;
-    Frame_buffer_a[102][102] = 1'b1;
-
-    // Blinker at (200,100) — oscillates period 2
-    Frame_buffer_a[199][100] = 1'b1;
-    Frame_buffer_a[200][100] = 1'b1;
-    Frame_buffer_a[201][100] = 1'b1;
-
-    // Toad at (300,100) — period-2 oscillator
-    Frame_buffer_a[301][100] = 1'b1;
-    Frame_buffer_a[302][100] = 1'b1;
-    Frame_buffer_a[303][100] = 1'b1;
-    Frame_buffer_a[300][101] = 1'b1;
-    Frame_buffer_a[301][101] = 1'b1;
-    Frame_buffer_a[302][101] = 1'b1;
-end
-
-
-    always @(posedge pixclk)
-    begin
-    if(CounterX > 0 && CounterX < 639 && CounterY > 0 && CounterY < 479)
-        begin
-        if(swap_buffer == 1'b0)begin
-        reg [7:0] neighbor_pixel_value =  
-            Frame_buffer_a[CounterX-1][CounterY-1] + 
-            Frame_buffer_a[CounterX+1][CounterY-1]+ 
-            Frame_buffer_a[CounterX-1][CounterY+1]+
-            Frame_buffer_a[CounterX+1][CounterY+1] + 
-            Frame_buffer_a[CounterX - 1][CounterY] + 
-            Frame_buffer_a[CounterX][CounterY + 1] + 
-            Frame_buffer_a[CounterX][CounterY - 1];
-        if(neighbor_pixel_value > 3'd3)
-            Frame_buffer_b[CounterX][CounterY] <= 1'b0;
-        if (neighbor_pixel_value == 3'd3)
-            Frame_buffer_b[CounterX][CounterY] <= 1'b1;
-        if(neighbor_pixel_value < 3'd2)
-            Frame_buffer_b[CounterX][CounterY] <= 1'b0;
-        end
-        else begin
-        reg [7:0] neighbor_pixel_value =  
-            Frame_buffer_b[CounterX-1][CounterY-1] + 
-            Frame_buffer_b[CounterX+1][CounterY-1]+ 
-            Frame_buffer_b[CounterX-1][CounterY+1]+
-            Frame_buffer_b[CounterX+1][CounterY+1] + 
-            Frame_buffer_b[CounterX - 1][CounterY] + 
-            Frame_buffer_b[CounterX][CounterY + 1] + 
-            Frame_buffer_b[CounterX][CounterY - 1];
-        if(neighbor_pixel_value > 3'd3)
-            Frame_buffer_a[CounterX][CounterY] <= 1'b0;
-        if (neighbor_pixel_value == 3'd3)
-            Frame_buffer_a[CounterX][CounterY] <= 1'b1;
-        if(neighbor_pixel_value < 3'd2)
-            Frame_buffer_a[CounterX][CounterY] <= 1'b0;
-        end
-        end
-    if(CounterX == 0 || CounterX == 639 || CounterY == 0 || CounterY == 479)
-        begin
-        swap_buffer <= ~swap_buffer;
-        end
-    end
-
-    
     // =========================================================================
-    // 3) TEST PATTERN — generates something visible so we can debug HDMI
+    // Game of Life — 32×24 cells, each shown as a 20×20 HDMI pixel block
     // -------------------------------------------------------------------------
-    // Same pattern as fpga4fun: diagonal white line, colored regions, a black box.
-    // Diagonal slides each frame via `frame`.
+    // HDMI stays 640×480. Life is 32×24 bits/buffer so it fits in DFFs.
+    // Cell coords are tracked with counters (not /20 or %20 — those synthesize
+    // poorly on Gowin). Seeds are applied on rst: `initial` alone often does
+    // not load into the bitstream, which leaves an all-dead (black) board.
     // =========================================================================
-    // wire [7:0] W = {8{CounterX[7:0] == (CounterY[7:0] + frame)}};
-    // wire [7:0] A = {8{CounterX[7:5] == 3'h2 && CounterY[7:5] == 3'h2}};
-    // reg  [7:0] red, green, blue;
+    localparam LIFE_W  = 32;
+    localparam LIFE_H  = 24;
+    localparam CELL_PX = 20;  // 32*20=640, 24*20=480
+    localparam div = 60;
 
-    // always @(posedge pixclk)
-    //     red <= ({CounterX[5:0] & {6{CounterY[4] == ~CounterX[4]}}, 2'b00} | W) & ~A;
-    // always @(posedge pixclk)
-    //     green <= (CounterX[7:0] & {8{CounterY[6]}} | W) & ~A;
-    // always @(posedge pixclk)
-    //     blue <= CounterY[7:0] | W | A;
+    reg [7:0] neighbor_pixel_value;
+    reg Frame_buffer_a [0:LIFE_W-1][0:LIFE_H-1];
+    reg Frame_buffer_b [0:LIFE_W-1][0:LIFE_H-1];
+    reg swap_buffer;
+    
+    // Pixel position inside the current 20×20 cell, and cell indices
+    reg [4:0] sub_x, sub_y;     // 0..19
+    reg [4:0] cell_x, cell_y;   // 0..31 / 0..23
+    wire cell_origin = (CounterX < 640) && (CounterY < 480) &&
+                       (sub_x == 5'd0) && (sub_y == 5'd0);
 
-    // reg [7:0] red_reg, green_reg, blue_reg;
-    // always @(posedge pixclk)
-    //     red_reg <= red;
-    // always @(posedge pixclk)
-    //     green_reg <= green;
-    // always @(posedge pixclk)
-    //     blue_reg <= blue;
+    integer ix, iy;
 
-    wire [7:0] red, green, blue;
-    always @(posedge pixclk)
-    if(swap_buffer == 1'b0)begin
-        red <= {8{Frame_buffer_a[CounterX][CounterY]}};
+    // Walk cell_x/y in lockstep with the HDMI raster (no division)
+    always @(posedge pixclk) begin
+        if (rst) begin
+            sub_x  <= 5'd0;
+            sub_y  <= 5'd0;
+            cell_x <= 5'd0;
+            cell_y <= 5'd0;
+        end else if (CounterX == 10'd799) begin
+            // End of HDMI line: X resets; Y advances once per visible line
+            sub_x  <= 5'd0;
+            cell_x <= 5'd0;
+            if (CounterY == 10'd524) begin
+                sub_y  <= 5'd0;
+                cell_y <= 5'd0;
+            end else if (CounterY < 10'd479) begin
+                if (sub_y == 5'd19) begin
+                    sub_y  <= 5'd0;
+                    cell_y <= cell_y + 5'd1;
+                end else begin
+                    sub_y <= sub_y + 5'd1;
+                end
+            end
+        end else if (CounterX < 10'd639) begin
+            if (sub_x == 5'd19) begin
+                sub_x  <= 5'd0;
+                cell_x <= cell_x + 5'd1;
+            end else begin
+                sub_x <= sub_x + 5'd1;
+            end
+        end
     end
-    else begin
-        red <= {8{Frame_buffer_b[CounterX][CounterY]}};
+
+    reg [5:0] counter_div = 6'd0;
+
+    always @(posedge pixclk) begin
+        if (rst) begin
+            swap_buffer <= 1'b0;
+            for (iy = 0; iy < LIFE_H; iy = iy + 1)
+                for (ix = 0; ix < LIFE_W; ix = ix + 1) begin
+                    Frame_buffer_a[ix][iy] <= 1'b0;
+                    Frame_buffer_b[ix][iy] <= 1'b0;
+                end
+            // Seeds (cell coords) — applied after the clear in the same reset
+            Frame_buffer_a[5][3]   <= 1'b1;
+            Frame_buffer_a[6][4]   <= 1'b1;
+            Frame_buffer_a[4][5]   <= 1'b1;
+            Frame_buffer_a[5][5]   <= 1'b1;
+            Frame_buffer_a[6][5]   <= 1'b1;
+            Frame_buffer_a[14][8]  <= 1'b1;
+            Frame_buffer_a[15][8]  <= 1'b1;
+            Frame_buffer_a[16][8]  <= 1'b1;
+            Frame_buffer_a[22][12] <= 1'b1;
+            Frame_buffer_a[23][12] <= 1'b1;
+            Frame_buffer_a[24][12] <= 1'b1;
+            Frame_buffer_a[21][13] <= 1'b1;
+            Frame_buffer_a[22][13] <= 1'b1;
+            Frame_buffer_a[23][13] <= 1'b1;
+        end else begin
+            // Interior cells only (edges stay 0 — no wrap)
+            if (cell_origin && cell_x > 0 && cell_x < LIFE_W-1 &&
+                cell_y > 0 && cell_y < LIFE_H-1) begin
+                if (swap_buffer == 1'b0) begin
+                    neighbor_pixel_value =
+                        Frame_buffer_a[cell_x-1][cell_y-1] +
+                        Frame_buffer_a[cell_x  ][cell_y-1] +
+                        Frame_buffer_a[cell_x+1][cell_y-1] +
+                        Frame_buffer_a[cell_x-1][cell_y  ] +
+                        Frame_buffer_a[cell_x+1][cell_y  ] +
+                        Frame_buffer_a[cell_x-1][cell_y+1] +
+                        Frame_buffer_a[cell_x  ][cell_y+1] +
+                        Frame_buffer_a[cell_x+1][cell_y+1];
+                    if (neighbor_pixel_value == 8'd3)
+                        Frame_buffer_b[cell_x][cell_y] <= 1'b1;
+                    else if (neighbor_pixel_value == 8'd2)
+                        Frame_buffer_b[cell_x][cell_y] <= Frame_buffer_a[cell_x][cell_y];
+                    else
+                        Frame_buffer_b[cell_x][cell_y] <= 1'b0;
+                end else begin
+                    neighbor_pixel_value =
+                        Frame_buffer_b[cell_x-1][cell_y-1] +
+                        Frame_buffer_b[cell_x  ][cell_y-1] +
+                        Frame_buffer_b[cell_x+1][cell_y-1] +
+                        Frame_buffer_b[cell_x-1][cell_y  ] +
+                        Frame_buffer_b[cell_x+1][cell_y  ] +
+                        Frame_buffer_b[cell_x-1][cell_y+1] +
+                        Frame_buffer_b[cell_x  ][cell_y+1] +
+                        Frame_buffer_b[cell_x+1][cell_y+1];
+                    if (neighbor_pixel_value == 8'd3)
+                        Frame_buffer_a[cell_x][cell_y] <= 1'b1;
+                    else if (neighbor_pixel_value == 8'd2)
+                        Frame_buffer_a[cell_x][cell_y] <= Frame_buffer_b[cell_x][cell_y];
+                    else
+                        Frame_buffer_a[cell_x][cell_y] <= 1'b0;
+                end
+            end
+
+            // One generation per HDMI frame
+            if (CounterX == 799 && CounterY == 524)
+                if (counter_div == div - 1) begin
+                    swap_buffer <= ~swap_buffer;
+                    counter_div <= 6'd0;
+                end
+                else begin
+                    counter_div <= counter_div + 6'd1;
+                end
+        end
     end
-    always @(posedge pixclk)
-        if(swap_buffer == 1'b0)begin
-        green <= {8{Frame_buffer_a[CounterX][CounterY]}};
-    end
-    else begin
-        green <= {8{Frame_buffer_b[CounterX][CounterY]}};
-    end
-    always @(posedge pixclk)
-        if(swap_buffer == 1'b0)begin
-        blue <= {8{Frame_buffer_a[CounterX][CounterY]}};
-    end
-    else begin
-        blue <= {8{Frame_buffer_b[CounterX][CounterY]}};
+
+    // =========================================================================
+    // 3) DISPLAY — alive = white, dead = dark gray (proves HDMI is alive)
+    // =========================================================================
+    reg [7:0] red, green, blue;
+    wire cell_alive = (swap_buffer == 1'b0)
+                    ? Frame_buffer_a[cell_x][cell_y]
+                    : Frame_buffer_b[cell_x][cell_y];
+
+    always @(posedge pixclk) begin
+        if (cell_alive) begin
+            red   <= 8'hFF;
+            green <= 8'hFF;
+            blue  <= 8'hFF;
+        end else begin
+            // Dim gray so a "black screen" vs "no signal" is obvious
+            red   <= 8'h20;
+            green <= 8'h20;
+            blue  <= 8'h28;
+        end
     end
     // =========================================================================
     // 4) TMDS ENCODE — 8-bit color → 10-bit DC-balanced symbols
