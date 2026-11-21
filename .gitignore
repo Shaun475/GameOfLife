@@ -1,0 +1,12 @@
+# Gowin IDE user-specific settings
+*.gprj.user
+
+# Build / implementation outputs
+impl/
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+.vscode/
+.idea/
