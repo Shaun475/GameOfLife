@@ -140,24 +140,31 @@ module HDMI (
             swap_buffer <= 1'b0;
             for (iy = 0; iy < LIFE_H; iy = iy + 1)
                 for (ix = 0; ix < LIFE_W; ix = ix + 1) begin
-                    Frame_buffer_a[ix][iy] <= 1'b0;
+                    //un comment to use clear buffer
+                    //Frame_buffer_a[ix][iy] <= 1'b0;
                     Frame_buffer_b[ix][iy] <= 1'b0;
+                    //comment to use random seeds
+                     if (ix == 0 || ix == LIFE_W-1 || iy == 0 || iy == LIFE_H-1)
+                        Frame_buffer_a[ix][iy] <= 1'b0;
+                    else
+                        Frame_buffer_a[ix][iy] <= (((ix * 73) ^ (iy * 191) ^ 42) % 3) == 0;
                 end
             // Seeds (cell coords) — applied after the clear in the same reset
-            Frame_buffer_a[5][3]   <= 1'b1;
-            Frame_buffer_a[6][4]   <= 1'b1;
-            Frame_buffer_a[4][5]   <= 1'b1;
-            Frame_buffer_a[5][5]   <= 1'b1;
-            Frame_buffer_a[6][5]   <= 1'b1;
-            Frame_buffer_a[14][8]  <= 1'b1;
-            Frame_buffer_a[15][8]  <= 1'b1;
-            Frame_buffer_a[16][8]  <= 1'b1;
-            Frame_buffer_a[22][12] <= 1'b1;
-            Frame_buffer_a[23][12] <= 1'b1;
-            Frame_buffer_a[24][12] <= 1'b1;
-            Frame_buffer_a[21][13] <= 1'b1;
-            Frame_buffer_a[22][13] <= 1'b1;
-            Frame_buffer_a[23][13] <= 1'b1;
+            //un comment to use set seeds that will repeat
+            // Frame_buffer_a[5][3]   <= 1'b1;
+            // Frame_buffer_a[6][4]   <= 1'b1;
+            // Frame_buffer_a[4][5]   <= 1'b1;
+            // Frame_buffer_a[5][5]   <= 1'b1;
+            // Frame_buffer_a[6][5]   <= 1'b1;
+            // Frame_buffer_a[14][8]  <= 1'b1;
+            // Frame_buffer_a[15][8]  <= 1'b1;
+            // Frame_buffer_a[16][8]  <= 1'b1;
+            // Frame_buffer_a[22][12] <= 1'b1;
+            // Frame_buffer_a[23][12] <= 1'b1;
+            // Frame_buffer_a[24][12] <= 1'b1;
+            // Frame_buffer_a[21][13] <= 1'b1;
+            // Frame_buffer_a[22][13] <= 1'b1;
+            // Frame_buffer_a[23][13] <= 1'b1;
         end else begin
             // Interior cells only (edges stay 0 — no wrap)
             if (cell_origin && cell_x > 0 && cell_x < LIFE_W-1 &&
@@ -206,6 +213,7 @@ module HDMI (
                 else begin
                     counter_div <= counter_div + 6'd1;
                 end
+
         end
     end
 
